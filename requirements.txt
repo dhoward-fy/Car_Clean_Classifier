@@ -1,0 +1,12 @@
+pytorch_lightning==1.9.4
+numpy==1.19.5
+torch==1.9.1
+torchvision
+wandb
+--extra-index-url https://developer.download.nvidia.com/compute/redist
+nvidia-dali-cuda110==1.23.0
+efficientnet_pytorch
+remotezip
+yolov7detect
+lru-dict
+dtlpy
