@@ -174,13 +174,19 @@ class DataloopDataset(torch.utils.data.Dataset):
                         annotations = []
                         for annotation in json_data["annotations"]:
                             label = annotation["label"]
-                            coords = annotation["coordinates"]
-                            p1 = np.array([coords[0]["x"], coords[0]["y"]])
-                            p2 = np.array([coords[1]["x"], coords[1]["y"]])
-                            bbox_size = np.linalg.norm(p2 - p1)
-                            annotations.append(
-                                [bbox_size, class_to_label[label], coords]
-                            )
+                            try:
+                                coords = annotation["coordinates"]
+                                p1 = np.array([coords[0]["x"], coords[0]["y"]])
+                                p2 = np.array([coords[1]["x"], coords[1]["y"]])
+                                bbox_size = np.linalg.norm(p2 - p1)
+                                annotations.append(
+                                    [bbox_size, class_to_label[label], coords]
+                                )
+                            except KeyError:
+                                try:
+                                    annotations.append([1, class_to_label[label], 0])
+                                except KeyError:
+                                    continue
                         annotations = sorted(
                             annotations, key=lambda x: x[0], reverse=True
                         )
@@ -189,7 +195,7 @@ class DataloopDataset(torch.utils.data.Dataset):
                             continue
                         self.files.append(target_file)
                         self.labels.append(annotations[0])
-                except:
+                except FileNotFoundError:
                     # We just ignore files that are not images or do not have a json file
                     continue
         assert len(self.files) == len(self.labels)
