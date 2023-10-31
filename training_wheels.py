@@ -40,7 +40,7 @@ class TrainingWheels(pl.LightningModule):
         if self.enable_image_logging:
             self.validation_table = wandb.Table(
                 columns=[
-                    "Image",
+                    "Image_name",
                     "Label",
                     "Batch_idx",
                     "Prediction",
@@ -63,14 +63,14 @@ class TrainingWheels(pl.LightningModule):
         return x
 
     def training_step(self, batch, batch_idx):
-        x, y = self.process_batch(batch)
+        name, x, y = self.process_batch(batch)
         y_hat = self(x)
         loss = torch.nn.functional.cross_entropy(y_hat, y)
         self.log("train_loss", loss)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        x, y = self.process_batch(batch)
+        name, x, y = self.process_batch(batch)
         y_hat = self(x)
         loss = torch.nn.functional.cross_entropy(y_hat, y)
         acc = (y_hat.argmax(dim=-1) == y).float().mean()
@@ -96,7 +96,8 @@ class TrainingWheels(pl.LightningModule):
                 label = str(CarState(int(y[b])))
                 pred = str(CarState(int(predictions[b])))
                 self.validation_table.add_data(
-                    wandb.Image(img),
+                    #wandb.Image(img),
+                    name[b],
                     label,
                     batch_idx,
                     pred,

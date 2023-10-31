@@ -484,7 +484,7 @@ class DataloopDatasetClean(torch.utils.data.Dataset):
         img = self.transform(img)
 
         # Only use the label of the biggest bounding box
-        return img, self.labels[item]
+        return self.file_names[item],img, self.labels[item]
 
     def __network_pre_transforms(self):
         return [
