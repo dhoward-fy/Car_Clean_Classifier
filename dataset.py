@@ -213,6 +213,7 @@ class DataloopDataset(torch.utils.data.Dataset):
                         continue
                     self.files.append(target_file)
                     self.labels.append(annotations[0])
+                    self.file_names.append(file)
             except FileNotFoundError:
                 # We just ignore files that are not images or do not have a json file
                 continue
@@ -230,6 +231,7 @@ class DataloopDataset(torch.utils.data.Dataset):
         self.train = train
         self.files = []
         self.labels = []
+        self.file_names = []
         self.dataset_dir = dataset_dir
         if dataset_dir is not None:
             self.__add_dir(dataset_dir)
@@ -279,7 +281,8 @@ class DataloopDataset(torch.utils.data.Dataset):
         img = self.transform(img)
 
         # Only use the label of the biggest bounding box
-        return img, self.labels[item][1]
+        return self.file_names[item], img, self.labels[item][1]
+        # return img, self.labels[item][1]
 
     def __network_pre_transforms(self):
         return [
