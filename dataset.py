@@ -152,28 +152,49 @@ class CarDirtyDataset(torch.utils.data.Dataset):
 
 
 class DataloopDataset(torch.utils.data.Dataset):
-    def __add_dir(self, target_dir):
+    def __add_dir(self, target_dir, seed=42):
         """
         Scans a directory for image files and valid json files and adds them to the dataset
         :param target_dir: Target directory that contains "items" and "json" subdirectories
         """
+        seen_filenames = set()
+        self.random_file_list = set()
+        random.seed(seed)
         class_to_label = {"clean": 0, "light_dirt": 1, "heavy_dirt": 1}
+
+        # Get one image from each vehicle at random
         for subdir in os.walk(os.path.join(target_dir, "items")):
             for file in subdir[2]:
-                try:
-                    target_file = os.path.join(target_dir, "items", file)
-                    Image.open(target_file)
-                    # Try to open the json file
-                    annotation_file_name = os.path.join(
-                        target_dir, "json", os.path.splitext(file)[0] + ".json"
-                    )
-                    with open(annotation_file_name) as annotation_file:
-                        json_data = json.load(annotation_file)
-                        img_width = json_data["metadata"]["system"]["width"]
-                        img_height = json_data["metadata"]["system"]["height"]
-                        annotations = []
-                        for annotation in json_data["annotations"]:
-                            label = annotation["label"]
+                if "_" in file:
+                    unique_filename = file[: file.rfind("_")]
+                else:
+                    unique_filename = file
+                if unique_filename not in seen_filenames:
+                    seen_filenames.add(unique_filename)
+                    files_with_prefix = [
+                        f
+                        for f in os.listdir(os.path.join(target_dir, "items"))
+                        if f.startswith(unique_filename)
+                    ]
+                    self.random_file_list.add(random.choice(files_with_prefix))
+
+        # Get data for randomly selected vehicle images
+        for file in self.random_file_list:
+            try:
+                target_file = os.path.join(target_dir, "items", file)
+                Image.open(target_file)
+                # Try to open the json file
+                annotation_file_name = os.path.join(
+                    target_dir, "json", os.path.splitext(file)[0] + ".json"
+                )
+                with open(annotation_file_name) as annotation_file:
+                    json_data = json.load(annotation_file)
+                    img_width = json_data["metadata"]["system"]["width"]
+                    img_height = json_data["metadata"]["system"]["height"]
+                    annotations = []
+                    for annotation in json_data["annotations"]:
+                        label = annotation["label"]
+                        try:
                             coords = annotation["coordinates"]
                             p1 = np.array([coords[0]["x"], coords[0]["y"]])
                             p2 = np.array([coords[1]["x"], coords[1]["y"]])
@@ -181,17 +202,20 @@ class DataloopDataset(torch.utils.data.Dataset):
                             annotations.append(
                                 [bbox_size, class_to_label[label], coords]
                             )
-                        annotations = sorted(
-                            annotations, key=lambda x: x[0], reverse=True
-                        )
-                        # Only the biggest bounding box is considered
-                        if len(annotations) == 0:
-                            continue
-                        self.files.append(target_file)
-                        self.labels.append(annotations[0])
-                except:
-                    # We just ignore files that are not images or do not have a json file
-                    continue
+                        except KeyError:
+                            try:
+                                annotations.append([1, class_to_label[label], 0])
+                            except KeyError:
+                                continue
+                    annotations = sorted(annotations, key=lambda x: x[0], reverse=True)
+                    # Only the biggest bounding box is considered
+                    if len(annotations) == 0:
+                        continue
+                    self.files.append(target_file)
+                    self.labels.append(annotations[0])
+            except FileNotFoundError:
+                # We just ignore files that are not images or do not have a json file
+                continue
         assert len(self.files) == len(self.labels)
 
     def __init__(

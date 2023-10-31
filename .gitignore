@@ -157,3 +157,6 @@ cython_debug/
 
 # Data
 dataloop/
+artifacts/
+.ipynb_checkpoints/
+wandb/
