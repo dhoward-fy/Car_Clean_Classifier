@@ -23,6 +23,8 @@ class TrainingWheels(pl.LightningModule):
         validation_set_size=0.1,
         lr=1e-3,
         enable_image_logging=False,
+        balance_sampler=False,
+        balance_sample_size=250
     ):
         super().__init__()
         self.model = model
@@ -35,6 +37,8 @@ class TrainingWheels(pl.LightningModule):
         self.validation_set_size = validation_set_size
         self.lr = lr
         self.enable_image_logging = enable_image_logging
+        self.balance_sampler = balance_sampler
+        self.balance_sample_size = balance_sample_size
 
     def on_validation_epoch_start(self):
         if self.enable_image_logging:
@@ -133,9 +137,22 @@ class TrainingWheels(pl.LightningModule):
         )
 
     def train_dataloader(self):
-        return torch.utils.data.DataLoader(
-            self.training_data, batch_size=self.batch_size, num_workers=4, shuffle=True
-        )
+        if self.balance_sampler:
+            train_target_list = [x[2] for x in iter(self.training_data)]
+            train_class_weights = [1/(len(train_target_list) - sum(train_target_list)), 1/len(train_target_list)]
+            train_class_weights_all = [train_class_weights[x] for x in train_target_list]
+            weighted_sampler = data.WeightedRandomSampler(
+                weights=train_class_weights_all,
+                num_samples=self.balance_sample_size,
+                replacement=False
+            )
+            return data.DataLoader(
+                dataset=self.training_data, shuffle=False, batch_size=self.batch_size, num_workers=4, sampler=weighted_sampler
+            )
+        else:
+            return torch.utils.data.DataLoader(
+                self.training_data, batch_size=self.batch_size, num_workers=4, shuffle=True
+            )
 
     def val_dataloader(self):
         return torch.utils.data.DataLoader(
