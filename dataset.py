@@ -18,13 +18,15 @@ import json
 from lru import LRU
 import random
 
+
 class CarState(IntEnum):
-    CAR_CLEAN = 0,
+    CAR_CLEAN = (0,)
     CAR_DIRTY = 1
 
     def __str__(self):
         strs = ["Clean", "Dirty"]
         return strs[self.value]
+
 
 class DataloopDataset(torch.utils.data.Dataset):
     def __add_dir(self, target_dir, email, password, project, dataset, seed=42):
@@ -35,7 +37,7 @@ class DataloopDataset(torch.utils.data.Dataset):
         dataloop.login_m2m(email=email, password=password)
         proj = dataloop.projects.get(project)
         dataset = proj.datasets.get(dataset)
-        
+
         seen_filenames = set()
         all_names = {}
         self.random_file_list = set()
@@ -56,21 +58,21 @@ class DataloopDataset(torch.utils.data.Dataset):
             if unique_filename not in seen_filenames:
                 seen_filenames.add(unique_filename)
                 files_with_prefix = [
-                    f
-                    for f in all_names
-                    if all_names[f].startswith(unique_filename)
+                    f for f in all_names if all_names[f].startswith(unique_filename)
                 ]
                 self.random_file_list.add(random.choice(files_with_prefix))
-        
+
         # Get data for randomly selected vehicle images
         for id in self.random_file_list:
-            item = dataset.items.get(item_id = id)
+            item = dataset.items.get(item_id=id)
             try:
                 item.download(local_path=f"{target_dir}/")
                 target_file = os.path.join(target_dir, item.name)
 
                 item.annotations.download(filepath=f"{target_dir}/")
-                annotation_file_name = os.path.join(target_dir, os.path.splitext(item.name)[0] + ".json")
+                annotation_file_name = os.path.join(
+                    target_dir, os.path.splitext(item.name)[0] + ".json"
+                )
 
                 with open(annotation_file_name) as annotation_file:
                     json_data = json.load(annotation_file)
@@ -100,20 +102,19 @@ class DataloopDataset(torch.utils.data.Dataset):
                     self.labels.append(annotations[0])
                     self.file_names.append(item.name)
             except FileNotFoundError:
-                        # We just ignore files that are not images or do not have a json file
-                        continue
+                # We just ignore files that are not images or do not have a json file
+                continue
         assert len(self.files) == len(self.labels)
 
     def __init__(
-        self, 
-        dataset_dir, 
-        email, 
-        password, 
-        project, 
+        self,
+        dataset_dir,
+        email,
+        password,
+        project,
         dataset,
-        train=False, 
-        center_crop=448, 
-        augmentation=NoAugmentation()
+        center_crop=448,
+        augmentation=NoAugmentation(),
     ):
         """
         Constructor
@@ -125,10 +126,10 @@ class DataloopDataset(torch.utils.data.Dataset):
         :param center_crop: Size of the crop window in pixels
         """
         super().__init__()
-        self.train = train
         self.files = []
         self.labels = []
         self.file_names = []
+        self.train_indices = set()
         self.dataset_dir = dataset_dir
         if dataset_dir is not None:
             self.__add_dir(dataset_dir, email, password, project, dataset)
@@ -136,27 +137,32 @@ class DataloopDataset(torch.utils.data.Dataset):
         self.augmentation = augmentation
 
         # Preprocessing pipeline
-        composition = []
-        if train:
-            if augmentation.enable_random_cropping:
-                composition.append(transforms.CenterCrop(center_crop))
-            if augmentation.random_rotation_angle>0:
-                composition.append(transforms.RandomRotation(augmentation.random_rotation_angle))
-            if augmentation.enable_horizontal_mirroring:
-                composition.append(transforms.RandomHorizontalFlip())
-            if augmentation.downscaling_width != 0 and augmentation.downscaling_height != 0:
-                target_size = [augmentation.downscaling_height, augmentation.downscaling_width]
-                composition.append(transforms.Resize(size=target_size))
-            pass
-        else:
-            if augmentation.enable_random_cropping:
-                composition.append(transforms.CenterCrop(center_crop))
-            if augmentation.downscaling_width != 0 and augmentation.downscaling_height != 0:
-                target_size = [augmentation.downscaling_height, augmentation.downscaling_width]
-                composition.append(transforms.Resize(size=target_size))
+        train_composition = []
+        valid_composition = []
+        if augmentation.enable_center_cropping:
+            train_composition.append(transforms.CenterCrop(center_crop))
+            valid_composition.append(transforms.CenterCrop(center_crop))
+        if augmentation.random_rotation_angle > 0:
+            train_composition.append(
+                transforms.RandomRotation(augmentation.random_rotation_angle)
+            )
+        if augmentation.enable_horizontal_mirroring:
+            train_composition.append(transforms.RandomHorizontalFlip())
+        if augmentation.downscaling_width != 0 and augmentation.downscaling_height != 0:
+            target_size = [
+                augmentation.downscaling_height,
+                augmentation.downscaling_width,
+            ]
+            train_composition.append(transforms.Resize(size=target_size))
+            valid_composition.append(transforms.Resize(size=target_size))
 
-        composition.append(transforms.ToTensor())
-        self.transform = transforms.Compose(composition)
+        train_composition.append(transforms.ToTensor())
+        valid_composition.append(transforms.ToTensor())
+        self.train_transform = transforms.Compose(train_composition)
+        self.valid_transform = transforms.Compose(valid_composition)
+
+    def train_split(self, indices_set):
+        self.train_indices = indices_set
 
     def __len__(self):
         return len(self.files)
@@ -164,10 +170,14 @@ class DataloopDataset(torch.utils.data.Dataset):
     def __getitem__(self, item):
         # Load image using PIL
         img = Image.open(self.files[item]).convert("RGB")
-        img = self.transform(img)
+
+        if item in self.train_indices:
+            img = self.train_transform(img)
+        else:
+            img = self.valid_transform(img)
 
         # Only use the label of the biggest bounding box
-        return self.file_names[item], img, self.labels[item][1]
+        return img, self.labels[item][1], self.file_names[item]
 
 
 class DataloopDatasetDirectory(torch.utils.data.Dataset):
@@ -238,16 +248,13 @@ class DataloopDatasetDirectory(torch.utils.data.Dataset):
                 continue
         assert len(self.files) == len(self.labels)
 
-    def __init__(
-        self, dataset_dir, train=False, center_crop=448, augmentation=NoAugmentation()
-    ):
+    def __init__(self, dataset_dir, center_crop=448, augmentation=NoAugmentation()):
         """
         Constructor
         :param dataset_dir: Directory that contains "items" and "json" subdirectories
         :param center_crop: Size of the crop window in pixels
         """
         super().__init__()
-        self.train = train
         self.files = []
         self.labels = []
         self.file_names = []
@@ -258,38 +265,32 @@ class DataloopDatasetDirectory(torch.utils.data.Dataset):
         self.augmentation = augmentation
 
         # Preprocessing pipeline
-        crop_padding = 128
-        composition = []
-        if train:
-            if (
-                augmentation.downscaling_width != 0
-                and augmentation.downscaling_height != 0
-            ):
-                target_size = [
-                    augmentation.downscaling_height,
-                    augmentation.downscaling_width,
-                ]
-                composition.append(transforms.Resize(size=target_size))
-            if augmentation.random_rotation_angle > 0:
-                composition.append(
-                    transforms.RandomRotation(augmentation.random_rotation_angle)
-                )
-            if augmentation.enable_random_cropping:
-                composition.append(
-                    transforms.CenterCrop(center_crop + crop_padding * 2)
-                )
-                composition.append(transforms.RandomCrop(center_crop))
-            if augmentation.enable_vertical_mirroring:
-                composition.append(transforms.RandomVerticalFlip())
-            if augmentation.enable_horizontal_mirroring:
-                composition.append(transforms.RandomHorizontalFlip())
+        train_composition = []
+        valid_composition = []
+        if augmentation.enable_center_cropping:
+            train_composition.append(transforms.CenterCrop(center_crop))
+            valid_composition.append(transforms.CenterCrop(center_crop))
+        if augmentation.random_rotation_angle > 0:
+            train_composition.append(
+                transforms.RandomRotation(augmentation.random_rotation_angle)
+            )
+        if augmentation.enable_horizontal_mirroring:
+            train_composition.append(transforms.RandomHorizontalFlip())
+        if augmentation.downscaling_width != 0 and augmentation.downscaling_height != 0:
+            target_size = [
+                augmentation.downscaling_height,
+                augmentation.downscaling_width,
+            ]
+            train_composition.append(transforms.Resize(size=target_size))
+            valid_composition.append(transforms.Resize(size=target_size))
 
-        composition.append(transforms.ToTensor())
-        # Normalization values taken from torchvision resnet18 docs
-        composition.append(
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        )
-        self.transform = transforms.Compose(composition)
+        train_composition.append(transforms.ToTensor())
+        valid_composition.append(transforms.ToTensor())
+        self.train_transform = transforms.Compose(train_composition)
+        self.valid_transform = transforms.Compose(valid_composition)
+
+    def train_split(self, indices_set):
+        self.train_indices = indices_set
 
     def __len__(self):
         return len(self.files)
@@ -297,18 +298,16 @@ class DataloopDatasetDirectory(torch.utils.data.Dataset):
     def __getitem__(self, item):
         # Load image using PIL
         img = Image.open(self.files[item]).convert("RGB")
-        img = self.transform(img)
+
+        if item in self.train_indices:
+            img = self.train_transform(img)
+        else:
+            img = self.valid_transform(img)
 
         # Only use the label of the biggest bounding box
-        return self.file_names[item], img, self.labels[item][1]
-        # return img, self.labels[item][1]
+        return img, self.labels[item][1], self.file_names[item]
 
-    def __network_pre_transforms(self):
-        return [
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        ]
 
-    
 class DataloopFiles(torch.utils.data.Dataset):
     def __add_dir(self, target_dir, seed=42):
         """
@@ -360,7 +359,11 @@ class DataloopFiles(torch.utils.data.Dataset):
         assert len(self.files) == len(self.labels)
 
     def __init__(
-        self, dataset_dir, file_list, train=False, center_crop=448, augmentation=NoAugmentation()
+        self,
+        dataset_dir,
+        file_list,
+        center_crop=448,
+        augmentation=NoAugmentation(),
     ):
         """
         Constructor
@@ -368,7 +371,6 @@ class DataloopFiles(torch.utils.data.Dataset):
         :param center_crop: Size of the crop window in pixels
         """
         super().__init__()
-        self.train = train
         self.files = []
         self.labels = []
         self.file_names = []
@@ -380,38 +382,32 @@ class DataloopFiles(torch.utils.data.Dataset):
         self.augmentation = augmentation
 
         # Preprocessing pipeline
-        crop_padding = 128
-        composition = []
-        if train:
-            if (
-                augmentation.downscaling_width != 0
-                and augmentation.downscaling_height != 0
-            ):
-                target_size = [
-                    augmentation.downscaling_height,
-                    augmentation.downscaling_width,
-                ]
-                composition.append(transforms.Resize(size=target_size))
-            if augmentation.random_rotation_angle > 0:
-                composition.append(
-                    transforms.RandomRotation(augmentation.random_rotation_angle)
-                )
-            if augmentation.enable_random_cropping:
-                composition.append(
-                    transforms.CenterCrop(center_crop + crop_padding * 2)
-                )
-                composition.append(transforms.RandomCrop(center_crop))
-            if augmentation.enable_vertical_mirroring:
-                composition.append(transforms.RandomVerticalFlip())
-            if augmentation.enable_horizontal_mirroring:
-                composition.append(transforms.RandomHorizontalFlip())
+        train_composition = []
+        valid_composition = []
+        if augmentation.enable_center_cropping:
+            train_composition.append(transforms.CenterCrop(center_crop))
+            valid_composition.append(transforms.CenterCrop(center_crop))
+        if augmentation.random_rotation_angle > 0:
+            train_composition.append(
+                transforms.RandomRotation(augmentation.random_rotation_angle)
+            )
+        if augmentation.enable_horizontal_mirroring:
+            train_composition.append(transforms.RandomHorizontalFlip())
+        if augmentation.downscaling_width != 0 and augmentation.downscaling_height != 0:
+            target_size = [
+                augmentation.downscaling_height,
+                augmentation.downscaling_width,
+            ]
+            train_composition.append(transforms.Resize(size=target_size))
+            valid_composition.append(transforms.Resize(size=target_size))
 
-        composition.append(transforms.ToTensor())
-        # Normalization values taken from torchvision resnet18 docs
-        composition.append(
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        )
-        self.transform = transforms.Compose(composition)
+        train_composition.append(transforms.ToTensor())
+        valid_composition.append(transforms.ToTensor())
+        self.train_transform = transforms.Compose(train_composition)
+        self.valid_transform = transforms.Compose(valid_composition)
+
+    def train_split(self, indices_set):
+        self.train_indices = indices_set
 
     def __len__(self):
         return len(self.files)
@@ -419,16 +415,11 @@ class DataloopFiles(torch.utils.data.Dataset):
     def __getitem__(self, item):
         # Load image using PIL
         img = Image.open(self.files[item]).convert("RGB")
-        img = self.transform(img)
+
+        if item in self.train_indices:
+            img = self.train_transform(img)
+        else:
+            img = self.valid_transform(img)
 
         # Only use the label of the biggest bounding box
-        return self.file_names[item], img, self.labels[item][1]
-        # return img, self.labels[item][1]
-
-    def __network_pre_transforms(self):
-        return [
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        ]
-    
-
-
+        return img, self.labels[item][1], self.file_names[item]
