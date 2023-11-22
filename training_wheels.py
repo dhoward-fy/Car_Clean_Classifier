@@ -17,8 +17,8 @@ class TrainingWheels(pl.LightningModule):
     def __init__(
         self,
         model,
-        train_dataset,
-        valid_dataset,
+        dataset,
+        validation_set_size=0.1,
         batch_size=64,
         augmentation=NoAugmentation(),
         lr=1e-3,
@@ -29,8 +29,8 @@ class TrainingWheels(pl.LightningModule):
         self.batch_size = batch_size
         self.augmentation = augmentation
         self.save_hyperparameters()
-        self.training_data = train_dataset
-        self.validation_data = valid_dataset
+        self.dataset = dataset
+        self.validation_set_size = validation_set_size
         self.lr = lr
         self.enable_image_logging = enable_image_logging
 
@@ -110,7 +110,13 @@ class TrainingWheels(pl.LightningModule):
         pass
 
     def setup(self, stage=None):
-        pass
+        # Split the dataset into training and validation data
+        train_set_size = int(len(self.dataset) * (1.0 - self.validation_set_size))
+        valid_set_size = len(self.dataset) - train_set_size
+        seed = torch.Generator().manual_seed(42)
+        self.training_data, self.validation_data = data.random_split(
+            self.dataset, [train_set_size, valid_set_size], generator=seed
+        )
 
     def train_dataloader(self):
         return torch.utils.data.DataLoader(
