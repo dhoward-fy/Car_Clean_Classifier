@@ -15,7 +15,6 @@ import torch
 import dtlpy as dataloop
 from augmentation import NoAugmentation
 import json
-from lru import LRU
 import random
 
 
