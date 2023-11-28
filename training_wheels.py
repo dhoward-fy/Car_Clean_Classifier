@@ -101,10 +101,13 @@ class TrainingWheels(pl.LightningModule):
 
     def configure_optimizers(self):
         return Adam(self.parameters(), lr=self.lr)
+    
+    def process_batch(self, batch):
+        return batch
 
     def train_dataloader(self):
         return torch.utils.data.DataLoader(
-            self.training_dataset,
+            self.train_dataset,
             batch_size=self.batch_size,
             num_workers=4,
             shuffle=True,
@@ -112,5 +115,5 @@ class TrainingWheels(pl.LightningModule):
 
     def val_dataloader(self):
         return torch.utils.data.DataLoader(
-            self.validation_dataset, batch_size=self.batch_size, num_workers=4
+            self.valid_dataset, batch_size=self.batch_size, num_workers=4
         )
