@@ -26,10 +26,12 @@ class TrainingWheels(pl.LightningModule):
     ):
         super().__init__()
         self.model = model
+        self.dataset = dataset
         self.batch_size = batch_size
         self.augmentation = augmentation
         self.save_hyperparameters()
-        self.dataset = dataset
+        self.training_data = None
+        self.validation_data = None
         self.validation_set_size = validation_set_size
         self.lr = lr
         self.enable_image_logging = enable_image_logging

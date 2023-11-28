@@ -138,7 +138,7 @@ class DataloopDataset(torch.utils.data.Dataset):
         # Preprocessing pipeline
         composition = []
         if self.train:
-            if augmentation.enable_random_cropping:
+            if augmentation.enable_center_cropping:
                 composition.append(transforms.CenterCrop(center_crop))
             if augmentation.random_rotation_angle > 0:
                 composition.append(
@@ -157,7 +157,7 @@ class DataloopDataset(torch.utils.data.Dataset):
                 composition.append(transforms.Resize(size=target_size))
             pass
         else:
-            if augmentation.enable_random_cropping:
+            if augmentation.enable_center_cropping:
                 composition.append(transforms.CenterCrop(center_crop))
             if (
                 augmentation.downscaling_width != 0
@@ -272,7 +272,7 @@ class DataloopDatasetDirectory(torch.utils.data.Dataset):
         # Preprocessing pipeline
         composition = []
         if self.train:
-            if augmentation.enable_random_cropping:
+            if augmentation.enable_center_cropping:
                 composition.append(transforms.CenterCrop(center_crop))
             if augmentation.random_rotation_angle > 0:
                 composition.append(
@@ -291,7 +291,7 @@ class DataloopDatasetDirectory(torch.utils.data.Dataset):
                 composition.append(transforms.Resize(size=target_size))
             pass
         else:
-            if augmentation.enable_random_cropping:
+            if augmentation.enable_center_cropping:
                 composition.append(transforms.CenterCrop(center_crop))
             if (
                 augmentation.downscaling_width != 0
@@ -394,7 +394,7 @@ class DataloopFiles(torch.utils.data.Dataset):
         # Preprocessing pipeline
         composition = []
         if self.train:
-            if augmentation.enable_random_cropping:
+            if augmentation.enable_center_cropping:
                 composition.append(transforms.CenterCrop(center_crop))
             if augmentation.random_rotation_angle > 0:
                 composition.append(
@@ -413,7 +413,7 @@ class DataloopFiles(torch.utils.data.Dataset):
                 composition.append(transforms.Resize(size=target_size))
             pass
         else:
-            if augmentation.enable_random_cropping:
+            if augmentation.enable_center_cropping:
                 composition.append(transforms.CenterCrop(center_crop))
             if (
                 augmentation.downscaling_width != 0
