@@ -18,13 +18,11 @@ class TrainingWheels(pl.LightningModule):
         self,
         model,
         dataset,
+        validation_set_size=0.1,
         batch_size=64,
         augmentation=NoAugmentation(),
-        validation_set_size=0.1,
         lr=1e-3,
         enable_image_logging=False,
-        balance_sampler=False,
-        balance_sample_size=250
     ):
         super().__init__()
         self.model = model
@@ -37,14 +35,12 @@ class TrainingWheels(pl.LightningModule):
         self.validation_set_size = validation_set_size
         self.lr = lr
         self.enable_image_logging = enable_image_logging
-        self.balance_sampler = balance_sampler
-        self.balance_sample_size = balance_sample_size
 
     def on_validation_epoch_start(self):
         if self.enable_image_logging:
             self.validation_table = wandb.Table(
                 columns=[
-                    "Image_name",
+                    "Image_Name",
                     "Label",
                     "Batch_idx",
                     "Prediction",
@@ -67,51 +63,39 @@ class TrainingWheels(pl.LightningModule):
         return x
 
     def training_step(self, batch, batch_idx):
-        name, x, y = self.process_batch(batch)
+        x, y, file_name = self.process_batch(batch)
         y_hat = self(x)
         loss = torch.nn.functional.cross_entropy(y_hat, y)
         self.log("train_loss", loss)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        name, x, y = self.process_batch(batch)
+        x, y, file_name = self.process_batch(batch)
         y_hat = self(x)
         loss = torch.nn.functional.cross_entropy(y_hat, y)
         acc = (y_hat.argmax(dim=-1) == y).float().mean()
+
         # Weights and biases logging
-
         if self.enable_image_logging:
-            # Undo normalization
-            inv_norm = transforms.Compose(
-                [
-                    transforms.Normalize(
-                        mean=[0.0, 0.0, 0.0], std=[1 / 0.229, 1 / 0.224, 1 / 0.225]
-                    ),
-                    transforms.Normalize(
-                        mean=[-0.485, -0.456, -0.406], std=[1.0, 1.0, 1.0]
-                    ),
-                ]
-            )
-
             bs = x.size()[0]
             predictions = torch.argmax(y_hat, dim=1)
             for b in range(bs):
-                img = inv_norm(x[b])
+                f_name = file_name[b]
                 label = str(CarState(int(y[b])))
                 pred = str(CarState(int(predictions[b])))
                 self.validation_table.add_data(
-                    #wandb.Image(img),
-                    name[b],
+                    f_name,
                     label,
                     batch_idx,
                     pred,
                     y_hat[b][0].item(),
                     y_hat[b][1].item(),
                 )
+
         self.log_dict({"val_loss": loss, "val_acc": acc})
 
     def test_step(self, batch, batch_idx):
-        x, y = batch
+        x, y, file_name = batch
         y_hat = self(x)
         loss = torch.nn.functional.cross_entropy(y_hat, y)
         acc = (y_hat.argmax(dim=-1) == y).float().mean()
@@ -137,22 +121,9 @@ class TrainingWheels(pl.LightningModule):
         )
 
     def train_dataloader(self):
-        if self.balance_sampler:
-            train_target_list = [x[2] for x in iter(self.training_data)]
-            train_class_weights = [1/(len(train_target_list) - sum(train_target_list)), 1/len(train_target_list)]
-            train_class_weights_all = [train_class_weights[x] for x in train_target_list]
-            weighted_sampler = data.WeightedRandomSampler(
-                weights=train_class_weights_all,
-                num_samples=self.balance_sample_size,
-                replacement=False
-            )
-            return data.DataLoader(
-                dataset=self.training_data, shuffle=False, batch_size=self.batch_size, num_workers=4, sampler=weighted_sampler
-            )
-        else:
-            return torch.utils.data.DataLoader(
-                self.training_data, batch_size=self.batch_size, num_workers=4, shuffle=True
-            )
+        return torch.utils.data.DataLoader(
+            self.training_data, batch_size=self.batch_size, num_workers=4, shuffle=True
+        )
 
     def val_dataloader(self):
         return torch.utils.data.DataLoader(
