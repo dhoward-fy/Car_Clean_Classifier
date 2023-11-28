@@ -104,10 +104,13 @@ class TrainingWheels(pl.LightningModule):
 
     def train_dataloader(self):
         return torch.utils.data.DataLoader(
-            self.training_data, batch_size=self.batch_size, num_workers=4, shuffle=True
+            self.training_dataset,
+            batch_size=self.batch_size,
+            num_workers=4,
+            shuffle=True,
         )
 
     def val_dataloader(self):
         return torch.utils.data.DataLoader(
-            self.validation_data, batch_size=self.batch_size, num_workers=4
+            self.validation_dataset, batch_size=self.batch_size, num_workers=4
         )
