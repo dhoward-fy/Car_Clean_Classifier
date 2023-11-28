@@ -19,7 +19,7 @@ import random
 
 
 class CarState(IntEnum):
-    CAR_CLEAN = (0,)
+    CAR_CLEAN = 0
     CAR_DIRTY = 1
 
     def __str__(self):
@@ -110,7 +110,6 @@ class DataloopDataset(torch.utils.data.Dataset):
         password,
         project,
         dataset,
-        train=False,
         center_crop=448,
         augmentation=NoAugmentation(),
     ):
@@ -124,7 +123,6 @@ class DataloopDataset(torch.utils.data.Dataset):
         :param center_crop: Size of the crop window in pixels
         """
         super().__init__()
-        self.train = train
         self.files = []
         self.labels = []
         self.file_names = []
@@ -134,43 +132,35 @@ class DataloopDataset(torch.utils.data.Dataset):
             self.__add_dir(dataset_dir, email, password, project, dataset)
         self.center_crop = center_crop
         self.augmentation = augmentation
+        self.train_indices = set()
 
         # Preprocessing pipeline
-        composition = []
-        if self.train:
-            if augmentation.enable_center_cropping:
-                composition.append(transforms.CenterCrop(center_crop))
-            if augmentation.random_rotation_angle > 0:
-                composition.append(
-                    transforms.RandomRotation(augmentation.random_rotation_angle)
-                )
-            if augmentation.enable_horizontal_mirroring:
-                composition.append(transforms.RandomHorizontalFlip())
-            if (
-                augmentation.downscaling_width != 0
-                and augmentation.downscaling_height != 0
-            ):
-                target_size = [
-                    augmentation.downscaling_height,
-                    augmentation.downscaling_width,
-                ]
-                composition.append(transforms.Resize(size=target_size))
-            pass
-        else:
-            if augmentation.enable_center_cropping:
-                composition.append(transforms.CenterCrop(center_crop))
-            if (
-                augmentation.downscaling_width != 0
-                and augmentation.downscaling_height != 0
-            ):
-                target_size = [
-                    augmentation.downscaling_height,
-                    augmentation.downscaling_width,
-                ]
-                composition.append(transforms.Resize(size=target_size))
+        train_composition = []
+        valid_composition = []
+        if augmentation.enable_center_cropping:
+            train_composition.append(transforms.CenterCrop(center_crop))
+            valid_composition.append(transforms.CenterCrop(center_crop))
+        if augmentation.random_rotation_angle > 0:
+            train_composition.append(
+                transforms.RandomRotation(augmentation.random_rotation_angle)
+            )
+        if augmentation.enable_horizontal_mirroring:
+            train_composition.append(transforms.RandomHorizontalFlip())
+        if augmentation.downscaling_width != 0 and augmentation.downscaling_height != 0:
+            target_size = [
+                augmentation.downscaling_height,
+                augmentation.downscaling_width,
+            ]
+            train_composition.append(transforms.Resize(size=target_size))
+            valid_composition.append(transforms.Resize(size=target_size))
 
-        composition.append(transforms.ToTensor())
-        self.transform = transforms.Compose(composition)
+        train_composition.append(transforms.ToTensor())
+        valid_composition.append(transforms.ToTensor())
+        self.train_transform = transforms.Compose(train_composition)
+        self.valid_transform = transforms.Compose(valid_composition)
+
+    def train_split(self, indices_set):
+        self.train_indices = indices_set
 
     def __len__(self):
         return len(self.files)
@@ -178,13 +168,17 @@ class DataloopDataset(torch.utils.data.Dataset):
     def __getitem__(self, item):
         # Load image using PIL
         img = Image.open(self.files[item]).convert("RGB")
-        img = self.transform(img)
+
+        if item in self.train_indices:
+            img = self.train_transform(img)
+        else:
+            img = self.valid_transform(img)
 
         # Only use the label of the biggest bounding box
         return img, self.labels[item][1], self.file_names[item]
 
 
-class DataloopDatasetDirectory(torch.utils.data.Dataset):
+class DataloopDatasetDirectory(DataloopDataset):
     def __add_dir(self, target_dir, seed=42):
         """
         Scans a directory for image files and valid json files and adds them to the dataset
@@ -251,15 +245,16 @@ class DataloopDatasetDirectory(torch.utils.data.Dataset):
         assert len(self.files) == len(self.labels)
 
     def __init__(
-        self, dataset_dir, train=False, center_crop=448, augmentation=NoAugmentation()
+        self,
+        dataset_dir,
+        center_crop=448,
+        augmentation=NoAugmentation(),
     ):
         """
         Constructor
         :param dataset_dir: Directory that contains "items" and "json" subdirectories
         :param center_crop: Size of the crop window in pixels
         """
-        super().__init__()
-        self.train = train
         self.files = []
         self.labels = []
         self.file_names = []
@@ -268,57 +263,35 @@ class DataloopDatasetDirectory(torch.utils.data.Dataset):
             self.__add_dir(dataset_dir)
         self.center_crop = center_crop
         self.augmentation = augmentation
+        self.train_indices = set()
 
         # Preprocessing pipeline
-        composition = []
-        if self.train:
-            if augmentation.enable_center_cropping:
-                composition.append(transforms.CenterCrop(center_crop))
-            if augmentation.random_rotation_angle > 0:
-                composition.append(
-                    transforms.RandomRotation(augmentation.random_rotation_angle)
-                )
-            if augmentation.enable_horizontal_mirroring:
-                composition.append(transforms.RandomHorizontalFlip())
-            if (
-                augmentation.downscaling_width != 0
-                and augmentation.downscaling_height != 0
-            ):
-                target_size = [
-                    augmentation.downscaling_height,
-                    augmentation.downscaling_width,
-                ]
-                composition.append(transforms.Resize(size=target_size))
-            pass
-        else:
-            if augmentation.enable_center_cropping:
-                composition.append(transforms.CenterCrop(center_crop))
-            if (
-                augmentation.downscaling_width != 0
-                and augmentation.downscaling_height != 0
-            ):
-                target_size = [
-                    augmentation.downscaling_height,
-                    augmentation.downscaling_width,
-                ]
-                composition.append(transforms.Resize(size=target_size))
+        train_composition = []
+        valid_composition = []
+        if augmentation.enable_center_cropping:
+            train_composition.append(transforms.CenterCrop(center_crop))
+            valid_composition.append(transforms.CenterCrop(center_crop))
+        if augmentation.random_rotation_angle > 0:
+            train_composition.append(
+                transforms.RandomRotation(augmentation.random_rotation_angle)
+            )
+        if augmentation.enable_horizontal_mirroring:
+            train_composition.append(transforms.RandomHorizontalFlip())
+        if augmentation.downscaling_width != 0 and augmentation.downscaling_height != 0:
+            target_size = [
+                augmentation.downscaling_height,
+                augmentation.downscaling_width,
+            ]
+            train_composition.append(transforms.Resize(size=target_size))
+            valid_composition.append(transforms.Resize(size=target_size))
 
-        composition.append(transforms.ToTensor())
-        self.transform = transforms.Compose(composition)
-
-    def __len__(self):
-        return len(self.files)
-
-    def __getitem__(self, item):
-        # Load image using PIL
-        img = Image.open(self.files[item]).convert("RGB")
-        img = self.transform(img)
-
-        # Only use the label of the biggest bounding box
-        return img, self.labels[item][1], self.file_names[item]
+        train_composition.append(transforms.ToTensor())
+        valid_composition.append(transforms.ToTensor())
+        self.train_transform = transforms.Compose(train_composition)
+        self.valid_transform = transforms.Compose(valid_composition)
 
 
-class DataloopFiles(torch.utils.data.Dataset):
+class DataloopFiles(DataloopDataset):
     def __add_dir(self, target_dir, seed=42):
         """
         Scans a directory for image files and valid json files and adds them to the dataset
@@ -370,7 +343,6 @@ class DataloopFiles(torch.utils.data.Dataset):
         self,
         dataset_dir,
         file_list,
-        train=False,
         center_crop=448,
         augmentation=NoAugmentation(),
     ):
@@ -379,8 +351,6 @@ class DataloopFiles(torch.utils.data.Dataset):
         :param dataset_dir: Directory that contains "items" and "json" subdirectories
         :param center_crop: Size of the crop window in pixels
         """
-        super().__init__()
-        self.train = train
         self.files = []
         self.labels = []
         self.file_names = []
@@ -390,51 +360,29 @@ class DataloopFiles(torch.utils.data.Dataset):
             self.__add_dir(dataset_dir)
         self.center_crop = center_crop
         self.augmentation = augmentation
+        self.train_indices = set()
 
         # Preprocessing pipeline
-        composition = []
-        if self.train:
-            if augmentation.enable_center_cropping:
-                composition.append(transforms.CenterCrop(center_crop))
-            if augmentation.random_rotation_angle > 0:
-                composition.append(
-                    transforms.RandomRotation(augmentation.random_rotation_angle)
-                )
-            if augmentation.enable_horizontal_mirroring:
-                composition.append(transforms.RandomHorizontalFlip())
-            if (
-                augmentation.downscaling_width != 0
-                and augmentation.downscaling_height != 0
-            ):
-                target_size = [
-                    augmentation.downscaling_height,
-                    augmentation.downscaling_width,
-                ]
-                composition.append(transforms.Resize(size=target_size))
-            pass
-        else:
-            if augmentation.enable_center_cropping:
-                composition.append(transforms.CenterCrop(center_crop))
-            if (
-                augmentation.downscaling_width != 0
-                and augmentation.downscaling_height != 0
-            ):
-                target_size = [
-                    augmentation.downscaling_height,
-                    augmentation.downscaling_width,
-                ]
-                composition.append(transforms.Resize(size=target_size))
+        train_composition = []
+        valid_composition = []
+        if augmentation.enable_center_cropping:
+            train_composition.append(transforms.CenterCrop(center_crop))
+            valid_composition.append(transforms.CenterCrop(center_crop))
+        if augmentation.random_rotation_angle > 0:
+            train_composition.append(
+                transforms.RandomRotation(augmentation.random_rotation_angle)
+            )
+        if augmentation.enable_horizontal_mirroring:
+            train_composition.append(transforms.RandomHorizontalFlip())
+        if augmentation.downscaling_width != 0 and augmentation.downscaling_height != 0:
+            target_size = [
+                augmentation.downscaling_height,
+                augmentation.downscaling_width,
+            ]
+            train_composition.append(transforms.Resize(size=target_size))
+            valid_composition.append(transforms.Resize(size=target_size))
 
-        composition.append(transforms.ToTensor())
-        self.transform = transforms.Compose(composition)
-
-    def __len__(self):
-        return len(self.files)
-
-    def __getitem__(self, item):
-        # Load image using PIL
-        img = Image.open(self.files[item]).convert("RGB")
-        img = self.transform(img)
-
-        # Only use the label of the biggest bounding box
-        return img, self.labels[item][1], self.file_names[item]
+        train_composition.append(transforms.ToTensor())
+        valid_composition.append(transforms.ToTensor())
+        self.train_transform = transforms.Compose(train_composition)
+        self.valid_transform = transforms.Compose(valid_composition)

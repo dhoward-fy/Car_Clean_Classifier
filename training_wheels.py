@@ -17,8 +17,8 @@ class TrainingWheels(pl.LightningModule):
     def __init__(
         self,
         model,
-        dataset,
-        validation_set_size=0.1,
+        train_dataset,
+        valid_dataset,
         batch_size=64,
         augmentation=NoAugmentation(),
         lr=1e-3,
@@ -26,13 +26,11 @@ class TrainingWheels(pl.LightningModule):
     ):
         super().__init__()
         self.model = model
-        self.dataset = dataset
+        self.train_dataset = train_dataset
+        self.valid_dataset = valid_dataset
         self.batch_size = batch_size
         self.augmentation = augmentation
         self.save_hyperparameters()
-        self.training_data = None
-        self.validation_data = None
-        self.validation_set_size = validation_set_size
         self.lr = lr
         self.enable_image_logging = enable_image_logging
 
@@ -103,29 +101,19 @@ class TrainingWheels(pl.LightningModule):
 
     def configure_optimizers(self):
         return Adam(self.parameters(), lr=self.lr)
-
+    
     def process_batch(self, batch):
         return batch
 
-    def prepare_data(self) -> None:
-        # Currently we do not download or preprocess any data
-        pass
-
-    def setup(self, stage=None):
-        # Split the dataset into training and validation data
-        train_set_size = int(len(self.dataset) * (1.0 - self.validation_set_size))
-        valid_set_size = len(self.dataset) - train_set_size
-        seed = torch.Generator().manual_seed(42)
-        self.training_data, self.validation_data = data.random_split(
-            self.dataset, [train_set_size, valid_set_size], generator=seed
-        )
-
     def train_dataloader(self):
         return torch.utils.data.DataLoader(
-            self.training_data, batch_size=self.batch_size, num_workers=4, shuffle=True
+            self.train_dataset,
+            batch_size=self.batch_size,
+            num_workers=4,
+            shuffle=True,
         )
 
     def val_dataloader(self):
         return torch.utils.data.DataLoader(
-            self.validation_data, batch_size=self.batch_size, num_workers=4
+            self.valid_dataset, batch_size=self.batch_size, num_workers=4
         )
