@@ -247,10 +247,6 @@ class DataloopDatasetDirectory(DataloopDataset):
     def __init__(
         self,
         dataset_dir,
-        email=None,
-        password=None,
-        project=None,
-        dataset=None,
         center_crop=448,
         augmentation=NoAugmentation(),
     ):
@@ -259,15 +255,40 @@ class DataloopDatasetDirectory(DataloopDataset):
         :param dataset_dir: Directory that contains "items" and "json" subdirectories
         :param center_crop: Size of the crop window in pixels
         """
-        super().__init__(
-            dataset_dir,
-            email,
-            password,
-            project,
-            dataset,
-            center_crop,
-            augmentation,
-        )
+        self.files = []
+        self.labels = []
+        self.file_names = []
+        self.dataset_dir = dataset_dir
+        if dataset_dir is not None:
+            self.__add_dir(dataset_dir)
+        self.center_crop = center_crop
+        self.augmentation = augmentation
+        self.train_indices = set()
+
+        # Preprocessing pipeline
+        train_composition = []
+        valid_composition = []
+        if augmentation.enable_center_cropping:
+            train_composition.append(transforms.CenterCrop(center_crop))
+            valid_composition.append(transforms.CenterCrop(center_crop))
+        if augmentation.random_rotation_angle > 0:
+            train_composition.append(
+                transforms.RandomRotation(augmentation.random_rotation_angle)
+            )
+        if augmentation.enable_horizontal_mirroring:
+            train_composition.append(transforms.RandomHorizontalFlip())
+        if augmentation.downscaling_width != 0 and augmentation.downscaling_height != 0:
+            target_size = [
+                augmentation.downscaling_height,
+                augmentation.downscaling_width,
+            ]
+            train_composition.append(transforms.Resize(size=target_size))
+            valid_composition.append(transforms.Resize(size=target_size))
+
+        train_composition.append(transforms.ToTensor())
+        valid_composition.append(transforms.ToTensor())
+        self.train_transform = transforms.Compose(train_composition)
+        self.valid_transform = transforms.Compose(valid_composition)
 
 
 class DataloopFiles(DataloopDataset):
@@ -322,10 +343,6 @@ class DataloopFiles(DataloopDataset):
         self,
         dataset_dir,
         file_list,
-        email=None,
-        password=None,
-        project=None,
-        dataset=None,
         center_crop=448,
         augmentation=NoAugmentation(),
     ):
@@ -334,13 +351,38 @@ class DataloopFiles(DataloopDataset):
         :param dataset_dir: Directory that contains "items" and "json" subdirectories
         :param center_crop: Size of the crop window in pixels
         """
+        self.files = []
+        self.labels = []
+        self.file_names = []
+        self.dataset_dir = dataset_dir
         self.file_list = file_list
-        super().__init__(
-            dataset_dir,
-            email,
-            password,
-            project,
-            dataset,
-            center_crop,
-            augmentation,
-        )
+        if dataset_dir is not None:
+            self.__add_dir(dataset_dir)
+        self.center_crop = center_crop
+        self.augmentation = augmentation
+        self.train_indices = set()
+
+        # Preprocessing pipeline
+        train_composition = []
+        valid_composition = []
+        if augmentation.enable_center_cropping:
+            train_composition.append(transforms.CenterCrop(center_crop))
+            valid_composition.append(transforms.CenterCrop(center_crop))
+        if augmentation.random_rotation_angle > 0:
+            train_composition.append(
+                transforms.RandomRotation(augmentation.random_rotation_angle)
+            )
+        if augmentation.enable_horizontal_mirroring:
+            train_composition.append(transforms.RandomHorizontalFlip())
+        if augmentation.downscaling_width != 0 and augmentation.downscaling_height != 0:
+            target_size = [
+                augmentation.downscaling_height,
+                augmentation.downscaling_width,
+            ]
+            train_composition.append(transforms.Resize(size=target_size))
+            valid_composition.append(transforms.Resize(size=target_size))
+
+        train_composition.append(transforms.ToTensor())
+        valid_composition.append(transforms.ToTensor())
+        self.train_transform = transforms.Compose(train_composition)
+        self.valid_transform = transforms.Compose(valid_composition)
